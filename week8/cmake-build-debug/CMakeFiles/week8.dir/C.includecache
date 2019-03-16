@@ -1,0 +1,40 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/Users/danilginzburg/Networks_course/week8/main.c
+stdio.h
+-
+stdbool.h
+-
+stdlib.h
+-
+unistd.h
+-
+pthread.h
+-
+sys/socket.h
+-
+netinet/in.h
+-
+netdb.h
+-
+memory.h
+-
+errno.h
+-
+structs.h
+/Users/danilginzburg/Networks_course/week8/structs.h
+sys/socket.h
+-
+netinet/in.h
+-
+arpa/inet.h
+-
+
+/Users/danilginzburg/Networks_course/week8/structs.h
+

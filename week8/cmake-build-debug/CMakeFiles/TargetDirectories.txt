@@ -1,0 +1,3 @@
+/Users/danilginzburg/Networks_course/week8/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/Users/danilginzburg/Networks_course/week8/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/danilginzburg/Networks_course/week8/cmake-build-debug/CMakeFiles/week8.dir
