@@ -25,7 +25,7 @@
 #include <arpa/inet.h>
 
 #define SERVER_IP_ADDRESS   "127.0.0.1"
-#define PORT     8839
+#define PORT     8835
 #define NAME "Daniel"
 
 
@@ -100,23 +100,33 @@ char* sync_files(char client_info[]) {
     char delim = ':';
     char file_delim = ',';
     int found_delim = 0;
-    int i = 0; int j = 0;
+    int i = 0; int j = 0; int k = 0;
     char filename[N_FILE_NAME];
+    char filenames[N_FILES][N_FILE_NAME];
     for (; i<100; i++) {
         if (found_delim == 3) {
-            filename[j] = client_info[i];
-            j++;
+            if (file_delim == client_info[i] || client_info[i] == '\0'){
+                memcpy(filenames[k], filename, N_FILE_NAME);
+                k++;
+                j = 0;
+            }
+            else {
+                filename[j] = client_info[i];
+                j++;
+            }
         }
         else if (client_info[i] == delim)
             found_delim++;
     }
-    return filename;
+
+    return filenames;
 }
 
 void setup_tcp_communication() {
 
     int host_id = 0;
-    bool send_me = true;
+    bool ping = true;
+    char filename[N_FILE_NAME];
     printf("[Client]: Starting to ping every node...\n");
 
     while(1) {
@@ -140,62 +150,74 @@ void setup_tcp_communication() {
 
         char result[N_FILE_NAME];
 
-        strcat(client_data, SERVER_IP_ADDRESS);
-        strcat(client_data, ":");
-        char str_port[10];
-        sprintf(str_port, "%d", PORT);
-        strcat(client_data, str_port);
-        for (int i=0; i<N_FILES; i++) {
-            if (strcmp(files[i], "")) {  // if not empty
-                strcat(client_data, ":");
-                strcat(client_data, files[i]);
-            }
-        }
-        char syn_flag[] = "1";
-        char host_n[2];
-        sprintf(host_n, "%d", host_head + 1);
+        if (ping) {
 
-        sendto(sockfd, // SYN
-               &syn_flag,
-               1, 0,
-               (struct sockaddr *) &dest,
-               sizeof(struct sockaddr));
-
-        sendto(sockfd,  // name:address:port:files..
-                                 &client_data,
-                                 100, 0,
-                                 (struct sockaddr *) &dest,
-                                 sizeof(struct sockaddr));
-
-        sendto(sockfd, // number of my hosts
-               &host_n,
-               2, 0,
-               (struct sockaddr *) &dest,
-               sizeof(struct sockaddr));
-
-        for(int j=0; j<host_head+1; j++) {  // send all my known hosts
-            char h[100];
-            strcpy(h, hosts[j].name);
-            strcat(h, ":");
-            strcat(h, inet_ntoa(hosts[j].host.sin_addr));
-            strcat(h, ":");
+            strcat(client_data, SERVER_IP_ADDRESS);
+            strcat(client_data, ":");
             char str_port[10];
-            sprintf(str_port, "%d", ntohs(hosts[j].host.sin_port));
-            strcat(h, str_port);
-            sendto(sockfd, // number of my hosts
-                   &h,
+            sprintf(str_port, "%d", PORT);
+            strcat(client_data, str_port);
+            bool more_than_one = false;
+            for (int i = 0; i < N_FILES; i++) {
+                if (strcmp(files[i], "")) {  // if not empty
+                    if (!more_than_one) {
+                        strcat(client_data, ":");
+                    }
+                    else{
+                        strcat(client_data, ",");
+                    }
+                    strcat(client_data, files[i]);
+                    more_than_one = true;
+                }
+            }
+            char syn_flag[] = "1";
+            char host_n[2];
+            sprintf(host_n, "%d", host_head + 1);
+
+            sendto(sockfd, // SYN
+                   &syn_flag,
+                   1, 0,
+                   (struct sockaddr *) &dest,
+                   sizeof(struct sockaddr));
+
+            sendto(sockfd,  // name:address:port:files..
+                   &client_data,
                    100, 0,
                    (struct sockaddr *) &dest,
                    sizeof(struct sockaddr));
-        }
 
-        sent_recv_bytes = recvfrom(sockfd, &result, N_FILE_NAME, 0,
-                                   (struct sockaddr *) &dest, &addr_len);
-        if (sent_recv_bytes >= 100) {
-            char filename[N_FILE_NAME];
-            for (int i=0; i<100; i++)
-                filename[i] = result[i+1];
-            printf("[Client]: rcvd %d bytes. rcvd %s\n", sent_recv_bytes, result);
+            sendto(sockfd, // number of my hosts
+                   &host_n,
+                   2, 0,
+                   (struct sockaddr *) &dest,
+                   sizeof(struct sockaddr));
+
+            for (int j = 0; j < host_head + 1; j++) {  // send all my known hosts
+                char h[100];
+                strcpy(h, hosts[j].name);
+                strcat(h, ":");
+                strcat(h, inet_ntoa(hosts[j].host.sin_addr));
+                strcat(h, ":");
+                char str_port[10];
+                sprintf(str_port, "%d", ntohs(hosts[j].host.sin_port));
+                strcat(h, str_port);
+                sendto(sockfd, // number of my hosts
+                       &h,
+                       100, 0,
+                       (struct sockaddr *) &dest,
+                       sizeof(struct sockaddr));
+            }
+
+            sent_recv_bytes = recvfrom(sockfd, &result, N_FILE_NAME, 0,
+                                       (struct sockaddr *) &dest, &addr_len);
+            if (sent_recv_bytes >= 100) {
+                ping = false; // start to send file
+                for (int i = 0; i < 100; i++)
+                    filename[i] = result[i + 1];
+                printf("[Client]: rcvd %d bytes. rcvd %s\n", sent_recv_bytes, result);
+            }
+        }
+        else { // sending file
             FILE *fp;
             fp = fopen(filename, "r");
             if (fp == NULL) {
@@ -206,27 +228,31 @@ void setup_tcp_communication() {
             char word[40];
             char words[30][40];
 
-            while(fscanf(fp, "%s", word) != EOF) {
+            while (fscanf(fp, "%s", word) != EOF) {
                 memcpy(words[n_words], word, 40);
-                n_words ++;
+                n_words++;
             }
             fclose(fp);
             char s_n_words[2];
+            char num_words[1];
             sprintf(s_n_words, "%d", n_words);
+            num_words[0] = s_n_words[0];
+            printf("number of words %s\n", s_n_words);
 
             sendto(sockfd, // sending number of words in the file
-                   &s_n_words,
-                   2, 0,
+                   &num_words,
+                   1, 0,
                    (struct sockaddr *) &dest,
                    sizeof(struct sockaddr));
 
-            for (int i=0; i<n_words; i++) { // sending word at a time to the requester
+            for (int i = 0; i < n_words; i++) { // sending word at a time to the requester
                 sendto(sockfd,
                        &words[i],
                        40, 0,
                        (struct sockaddr *) &dest,
                        sizeof(struct sockaddr));
             }
+            ping = true;
         }
 
         close(sockfd);
@@ -243,6 +269,8 @@ void setup_tcp_communication() {
 
 void
 setup_tcp_server_communication() {
+
+    char filename[100];
 
     int master_sock_tcp_fd = 0,
             sent_recv_bytes = 0,
@@ -302,8 +330,6 @@ setup_tcp_server_communication() {
             sent_recv_bytes = recvfrom(comm_socket_fd, (char *) data_buffer, sizeof(data_buffer), 0,
                                        (struct sockaddr *) &client_addr, &addr_len);
 
-            printf("%d/%s\n", sent_recv_bytes, data_buffer);
-
             if (sent_recv_bytes >= 203) {
 
                 printf("[Server]: recvd %d bytes from client %s:%u\n", sent_recv_bytes,
@@ -325,43 +351,72 @@ setup_tcp_server_communication() {
                     for (int k=0; k<100; k++) {
                         h[k] = data_buffer[adr+k];
                     }
-                    printf("this is h: %s\n", h);
                     add_new_host_from_char(h); // synchronise given hosts: add them if you don't have 'em already
 
                 }
 
-                char* filename = sync_files(client); // reading received client's file names
-                char filename_[100];
-                strcpy(filename_, filename);
+                char* filename_ = sync_files(client); // reading received client's file names
+                printf("\n");
 
-                char req_flag[] = "0";
-
-                sendto(comm_socket_fd,  // send request flag
-                       &req_flag,
-                       1, 0,
-                       (struct sockaddr *) &client_addr,
-                       sizeof(struct sockaddr));
-
-                sendto(comm_socket_fd,  // send filename
-                       &filename_,
-                       100, 0,
-                       (struct sockaddr *) &client_addr,
-                       sizeof(struct sockaddr));
+                strcpy(filename, filename_[0]);
 
 
-                printf("[Server] filename:   %s\n", filename);
+                    char req_flag[] = "0";
+
+                    sendto(comm_socket_fd,  // send request flag
+                           &req_flag,
+                           1, 0,
+                           (struct sockaddr *) &client_addr,
+                           sizeof(struct sockaddr));
+
+                    sendto(comm_socket_fd,  // send filename
+                           &filename,
+                           100, 0,
+                           (struct sockaddr *) &client_addr,
+                           sizeof(struct sockaddr));
+
+
+                    printf("[Server] requested file: %s\n", filename);
             }
 
-//            else if (sent_recv_bytes > 2 && sent_recv_bytes < 100) { // receiving file
-//                printf("[Server] got file: %s\n", data_buffer);
-//
-//                char ok_msg[] = "okay";
-//                sendto(comm_socket_fd,
-//                       &ok_msg,
-//                       4, 0,
-//                       (struct sockaddr *) &client_addr,
-//                       sizeof(struct sockaddr));
-//            }
+            else if (sent_recv_bytes > 1 && (sent_recv_bytes - 1) % 40 == 0) { // receiving new file
+                printf("[Server] got file: %s\n", data_buffer);
+                char word_split = '\0';
+                int n_words = data_buffer[0] - '0';
+                if (n_words == -1) { // no such file
+                    char ok_msg[] = "okay";
+                    sendto(comm_socket_fd,
+                           &ok_msg,
+                           4, 0,
+                           (struct sockaddr *) &client_addr,
+                           sizeof(struct sockaddr));
+                }
+                int found_words = 0;
+                char word[40];
+                int j = 0;
+                FILE *fp;
+                fp = fopen("tim_copy.txt", "w");    // TODO REPLACE THIS WITH FILENAME
+                for (int i=0; i<sent_recv_bytes; i++, j++) {
+                    if (found_words == n_words)
+                        break;
+                    if (data_buffer[i+1] == word_split){
+                        fprintf(fp, "%s ", word);
+                        found_words++;
+                        j = -1;
+                        i = (found_words * 40) - 1;
+                        continue;
+                    }
+                    word[j] = data_buffer[i+1];
+                }
+
+                fclose(fp);
+                char ok_msg[] = "okay";
+                sendto(comm_socket_fd,
+                       &ok_msg,
+                       4, 0,
+                       (struct sockaddr *) &client_addr,
+                       sizeof(struct sockaddr));
+            }
 
             else {
                 char ok_msg[] = "okay";
@@ -388,6 +443,7 @@ int main()
     host.sin_addr = *((struct in_addr *)adr->h_addr);
     add_new_host(host, NAME);
     memcpy(files[0], "tim.txt", 7);
+    memcpy(files[1], "enter.txt", 9);
 
     pthread_t server_thread_id; // server thread goes here
     pthread_create(&server_thread_id, NULL, setup_tcp_server_communication, NULL);
