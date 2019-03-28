@@ -1,16 +1,21 @@
 
 
 /*
+ * Lab #9 by Danil Ginzburg, BS17-07
+ *
+ * (See report.pdf for full report)
+ *
  * On every iteration client should send to every
  * known node:   1; "my_name:my_ip_address:port:file1,file2,...";
- * Server checks if he has this name, add it if no. Then hi might
- * request a transfer(one or more?) like this:    0; file1;
+ * Server checks if it has this file names, add it if no. Then he might
+ * request a transfer like this:    0; file1;
+ *
+ * (yes! it finally works!)
  */
 
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -25,25 +30,16 @@
 #include <arpa/inet.h>
 
 #define SERVER_IP_ADDRESS   "127.0.0.1"
-#define PORT     8835
+#define PORT     8836
 #define NAME "Daniel"
+
 
 
 char data_buffer[2048];
 struct host_struct hosts[N_HOSTS];
 int host_head = -1;
-bool syn = true; // initially server waits for syn
 char files[N_FILES][N_FILE_NAME];
 
-
-bool is_file_synced(char filename[N_FILE_NAME]) {
-    for (int i=0; i<N_FILES; i++) {
-        if (!strcmp(files[i], filename)) {
-            return true;
-        }
-    }
-    return false;
-}
 
 void add_new_host(struct sockaddr_in client_addr, char name[]) {
     int found = 0;
@@ -98,34 +94,24 @@ void add_new_host_from_char(char host[100]) {
 
 char* sync_files(char client_info[]) {
     char delim = ':';
-    char file_delim = ',';
     int found_delim = 0;
     int i = 0; int j = 0; int k = 0;
     char filename[N_FILE_NAME];
-    char filenames[N_FILES][N_FILE_NAME];
     for (; i<100; i++) {
         if (found_delim == 3) {
-            if (file_delim == client_info[i] || client_info[i] == '\0'){
-                memcpy(filenames[k], filename, N_FILE_NAME);
-                k++;
-                j = 0;
-            }
-            else {
-                filename[j] = client_info[i];
-                j++;
-            }
+            filename[j] = client_info[i];
+            j++;
         }
         else if (client_info[i] == delim)
             found_delim++;
     }
-
-    return filenames;
+    return filename;
 }
 
 void setup_tcp_communication() {
 
     int host_id = 0;
-    bool ping = true;
+    int ping = 1;
     char filename[N_FILE_NAME];
     printf("[Client]: Starting to ping every node...\n");
 
@@ -157,7 +143,7 @@ void setup_tcp_communication() {
             char str_port[10];
             sprintf(str_port, "%d", PORT);
             strcat(client_data, str_port);
-            bool more_than_one = false;
+            int more_than_one = 0;
             for (int i = 0; i < N_FILES; i++) {
                 if (strcmp(files[i], "")) {  // if not empty
                     if (!more_than_one) {
@@ -167,7 +153,7 @@ void setup_tcp_communication() {
                         strcat(client_data, ",");
                     }
                     strcat(client_data, files[i]);
-                    more_than_one = true;
+                    more_than_one = 1;
                 }
             }
             char syn_flag[] = "1";
@@ -211,7 +197,7 @@ void setup_tcp_communication() {
             sent_recv_bytes = recvfrom(sockfd, &result, N_FILE_NAME, 0,
                                        (struct sockaddr *) &dest, &addr_len);
             if (sent_recv_bytes >= 100) {
-                ping = false; // start to send file
+                ping = 0; // start to send file
                 for (int i = 0; i < 100; i++)
                     filename[i] = result[i + 1];
                 printf("[Client]: rcvd %d bytes. rcvd %s\n", sent_recv_bytes, result);
@@ -252,7 +238,7 @@ void setup_tcp_communication() {
                        (struct sockaddr *) &dest,
                        sizeof(struct sockaddr));
             }
-            ping = true;
+            ping = 1;
         }
 
         close(sockfd);
@@ -356,10 +342,7 @@ setup_tcp_server_communication() {
                 }
 
                 char* filename_ = sync_files(client); // reading received client's file names
-                printf("\n");
-
-                strcpy(filename, filename_[0]);
-
+                strcpy(filename, filename_);
 
                     char req_flag[] = "0";
 
@@ -380,7 +363,7 @@ setup_tcp_server_communication() {
             }
 
             else if (sent_recv_bytes > 1 && (sent_recv_bytes - 1) % 40 == 0) { // receiving new file
-                printf("[Server] got file: %s\n", data_buffer);
+                printf("[Server] got file: %s\n", filename);
                 char word_split = '\0';
                 int n_words = data_buffer[0] - '0';
                 if (n_words == -1) { // no such file
@@ -395,7 +378,7 @@ setup_tcp_server_communication() {
                 char word[40];
                 int j = 0;
                 FILE *fp;
-                fp = fopen("tim_copy.txt", "w");    // TODO REPLACE THIS WITH FILENAME
+                fp = fopen(filename, "w");
                 for (int i=0; i<sent_recv_bytes; i++, j++) {
                     if (found_words == n_words)
                         break;
@@ -443,7 +426,6 @@ int main()
     host.sin_addr = *((struct in_addr *)adr->h_addr);
     add_new_host(host, NAME);
     memcpy(files[0], "tim.txt", 7);
-    memcpy(files[1], "enter.txt", 9);
 
     pthread_t server_thread_id; // server thread goes here
     pthread_create(&server_thread_id, NULL, setup_tcp_server_communication, NULL);
